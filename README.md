@@ -1,70 +1,104 @@
 # Facial Recognition System
 
-**A custom convolutional neural network trained on CelebA, then adapted to personalized binary face recognition through transfer learning and fine-tuning.**
+**From a custom CNN trained on CelebA to personalized face recognition with transfer learning — plus an interactive demo of the original 40-attribute model.**
 
-![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-Keras-FF6F00?logo=tensorflow&logoColor=white)
-![Computer Vision](https://img.shields.io/badge/Computer_Vision-CNN-25324A)
-![Status](https://img.shields.io/badge/Status-Research_project-64748B)
+![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
+![TensorFlow / Keras](https://img.shields.io/badge/TensorFlow-Keras-FF6F00?logo=tensorflow&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-Demo-FF4B4B?logo=streamlit&logoColor=white)
+![Computer Vision](https://img.shields.io/badge/Computer_Vision-CNN-151581)
+![Status](https://img.shields.io/badge/Status-Research%20%2B%20Demo-64748B)
 
-## Overview
+## Interactive demo — Facial Attribute Analyzer
 
-This project investigates whether a convolutional neural network (CNN) trained **from scratch** for facial attribute prediction can transfer its learned visual representations to a smaller, personalized face-recognition task.
+The demo runs **my CNN trained from scratch** on CelebA. Upload a single portrait to explore the model's **40 facial-attribute scores**, ranked by probability and grouped by category. Adjust the threshold and export predictions as JSON.
 
-The workflow has three stages:
+![Facial Attribute Analyzer — Streamlit demonstration](demo/assets/facial-analyzer-demo.png)
 
-1. **Facial attribute learning:** train a CNN on the [CelebA dataset](https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) to predict 40 facial attributes.
-2. **Transfer Learning v1:** reuse its convolutional layers and train a binary classifier to distinguish a target individual (`yo`) from other faces (`otros`).
-3. **Transfer Learning v2:** address class imbalance through class weighting, stronger data augmentation, and threshold analysis.
+> **Two different tasks:** the public demo predicts **facial attributes**, not someone's identity. The separate transfer-learning experiments address **binary target-person-versus-others recognition** and are described below.
 
-> **Scope:** The recognition task is binary (target person vs. others), not identification among multiple named individuals. This is a research prototype, **not** a production-ready authentication or anti-spoofing system.
+**Demo features:**
+- Upload a JPEG or PNG portrait (up to 10 MB).
+- Display the input image and the top predicted attributes.
+- Explore all 40 outputs and categories (expression, hair, facial features, accessories).
+- Adjust the classification threshold without rerunning the CNN.
+- Download prediction scores as JSON.
+
+### Run the demo locally
+
+Tested locally on **Windows with Python 3.13** and the original `celebA_grande_mejor.h5` checkpoint. From the repository root:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements-demo.txt
+.\.venv\Scripts\python.exe -m streamlit run demo/app.py
+```
+
+Open **http://localhost:8501** if it does not open automatically.
+
+The demo expects this checkpoint at:
+
+```text
+Modelo CNN celebA/celebA_grande_mejor.h5
+```
+
+If the checkpoint is missing from your local clone, obtain the project's original model file separately and place it at that path. The demo **does not** use personalized identity-recognition checkpoints. CPU inference is sufficient for single photos; installation and inference time depend on your system.
+
+**Command-line alternative:**
+
+```powershell
+.\.venv\Scripts\python.exe predict.py --image ejemplo.jpg --top 10
+```
+
+The model resizes input to **128 × 128 RGB** and normalizes pixels to **[0, 1]**. It does **not** automatically detect, crop, or align faces; a single well-framed face works best. The names and ordering of the 40 attributes follow the **standard CelebA convention** and should be cross-checked against the original training CSV if available.
+
+## Project overview
+
+This research explores whether visual representations learned by a convolutional neural network (CNN), trained **from scratch** on a multi-label facial-attribute task, can transfer to a smaller, personalized face-recognition task.
+
+The work consists of three stages:
+
+1. **CNN on CelebA:** learn 40 facial attributes from a large annotated dataset.
+2. **Transfer Learning v1:** adapt the pretrained CNN to a binary task (`yo` vs. `otros`).
+3. **Transfer Learning v2:** study class weighting, stronger augmentation, and classification thresholds to address class imbalance.
+
+The identity experiments are research prototypes, **not** production-ready authentication, face identification across multiple named people, or anti-spoofing systems.
 
 ## Methodology
 
-### 1. CNN trained from scratch on CelebA
+### Stage 1 — CNN trained from scratch
 
-- Dataset: CelebA, containing **202,599 face images** annotated with **40 binary attributes**.
-- Input: **128 × 128 RGB** images normalized to `[0, 1]`.
-- Architecture: four convolutional blocks with **64 → 128 → 256 → 512 filters**, max pooling, global average pooling, dense layers, and a **40-unit sigmoid** output.
-- Optimization: Adam, binary cross-entropy, early stopping, model checkpoints, and adaptive learning-rate reduction.
-- Recorded best validation **binary accuracy: 91.50%**.
+- **Dataset:** CelebA, 202,599 images with 40 binary attributes.
+- **Input:** 128 × 128 RGB images, normalized to [0, 1].
+- **Architecture:** convolutional blocks with 64 → 128 → 256 → 512 filters, pooling, global average pooling, dense layers, and **40 sigmoid outputs**.
+- **Training:** Adam, binary cross-entropy, checkpoints, early stopping, and learning-rate reduction.
+- **Best recorded validation binary accuracy:** **91.50%**.
 
-**Important:** Binary accuracy here measures predictions over facial-attribute labels, **not** identity-recognition accuracy.
+**Note:** This metric measures individual *attribute-label predictions*; it is **not** identity recognition accuracy.
 
-### 2. Personalized recognition (v1)
+### Stage 2 — Personalized transfer learning (v1)
 
-The pretrained CNN is used as a **feature extractor**. Its original attribute-classification head is replaced with a new binary classifier:
+The original 40-attribute classification head is replaced with a binary classification head. The pretrained convolutional representation is used first with a frozen backbone, followed by fine-tuning while keeping its first ten layers frozen.
 
 ```text
 128 × 128 RGB image
-       ↓
-Pretrained CNN convolutional base
-       ↓
-Global Average Pooling
-       ↓
-Dropout → Dense(128, ReLU) → Dropout
-       ↓
-Dense(1, Sigmoid)
-       ↓
-Target person / Other person
+         ↓
+  Pretrained CNN backbone
+         ↓
+ Global Average Pooling
+         ↓
+  Binary classifier
+         ↓
+Target person / Others
 ```
 
-Training occurs in two phases:
+### Stage 3 — Class imbalance and thresholds (v2)
 
-- **Feature extraction:** freeze the convolutional base and train the new classification head.
-- **Fine-tuning:** unfreeze the convolutional base while keeping its first 10 layers frozen; train with a lower learning rate.
+The second experiment introduces stronger image augmentation, class weighting, and a validation-set sweep of classification thresholds. Its aim is to improve recall on the underrepresented positive class rather than maximize raw accuracy alone.
 
-### 3. Class imbalance and decision thresholds (v2)
+## Recorded results
 
-The second experiment modifies training to improve sensitivity to the underrepresented target class:
-
-- Stronger geometric and brightness augmentation.
-- Class weights calculated from the training-set distribution and applied in both phases.
-- Comparison of decision thresholds from **0.10 to 0.95** on the recorded validation predictions.
-
-## Results
-
-### Personalized recognition — reported validation results
+### Personalized binary recognition — validation
 
 | Metric | Transfer Learning v1 | Transfer Learning v2 |
 |:--|--:|--:|
@@ -74,75 +108,74 @@ The second experiment modifies training to improve sensitivity to the underrepre
 | F1-score | 81.48% | 83.33% |
 | Decision threshold | 0.50 | 0.60 |
 
-The v1 metrics are based on the report's validation confusion matrix, with the F1-score computed from precision and recall. V2 metrics are recorded in `Transfer Learning v2/umbrales.csv` at a **0.60** threshold (0.65 and 0.70 yield the same recorded metrics).
+The v1 F1-score is derived from the recorded validation confusion matrix. The v2 numbers correspond to a threshold of **0.60** in `Transfer Learning v2/umbrales.csv`.
 
-The main trade-off is that **v2 recognizes more positive examples but also introduces more false positives**. Higher recall does not mean universally better recognition or security.
+**Interpretation:** v2 detects more positive examples, but produces more false positives. Its higher recall does **not** imply superior security or overall performance in every application.
 
-![Threshold comparison](Transfer%20Learning%20v2/curvas_umbrales.png)
+![Decision threshold comparison](Transfer%20Learning%20v2/curvas_umbrales.png)
 
-### Important evaluation limitations
+### Evaluation limitations
 
-- Results are from the project's **validation data**; they are not independent external benchmark results.
-- The v2 threshold was selected using validation results. Its estimated performance may be optimistic until confirmed on a separate, untouched test set.
-- The original personal photographs and complete dataset preparation pipeline are not included, so end-to-end reproduction of the personalized experiment requires rebuilding the data splits.
-- No presentation-attack detection, demographic fairness evaluation, or deployment-security audit is documented.
+- These metrics come from the project's **validation set**, not an independent external benchmark.
+- V2 threshold selection and reporting used validation predictions, so the reported performance needs confirmation on a completely untouched test set.
+- The original personal images and full data-splitting pipeline are not included in this public demo.
+- No presentation-attack detection, demographic fairness study, or deployment security audit is documented.
+- CelebA labels such as `Attractive`, `Male`, and `Young` represent dataset annotations, **not verified or objective statements about people**; high scores should not be mistaken for calibrated certainty.
 
 ## Repository structure
 
 ```text
-.
+Reconocimiento-Facial/
+├── .streamlit/
+│   └── config.toml                # Streamlit theme settings
 ├── Modelo CNN celebA/
-│   ├── entrenar_celebA_grande.py      # Initial 40-attribute CNN training
-│   ├── historial_grande.json         # Recorded training history
-│   └── celebA_grande_mejor.h5        # Best model checkpoint
+│   ├── entrenar_celebA_grande.py  # Train 40-attribute CNN
+│   ├── historial_grande.json      # Training history
+│   └── celebA_grande_mejor.h5     # Original CelebA model checkpoint
 ├── Transfer Learning/
-│   ├── transfer_yo.py                # Binary recognition: v1
-│   ├── historial_fase1.pkl
-│   ├── historial_fase2.pkl
-│   ├── mejor_modelo_fase1.h5
-│   └── mejor_modelo_fase2.h5
+│   ├── transfer_yo.py             # Binary classifier, v1
+│   └── historial_*.pkl            # Training histories
 ├── Transfer Learning v2/
-│   ├── transfer_yo_v2.py             # Class-weighted binary recognition
-│   ├── historial_fase1_v2.pkl
-│   ├── historial_fase2_v2.pkl
-│   ├── mejor_modelo_fase1_v2.h5
-│   ├── mejor_modelo_fase2_v2.h5
+│   ├── transfer_yo_v2.py          # Weighted binary classifier, v2
+│   ├── historial_*.pkl
 │   ├── umbrales.csv
 │   └── curvas_umbrales.png
-├── Reporte.ipynb                     # Original experimental report
+├── demo/
+│   ├── app.py                     # Interactive Streamlit app
+│   ├── README-demo.md
+│   └── assets/
+│       └── facial-analyzer-demo.png
+├── predict.py                     # Shared inference engine + CLI
+├── requirements-demo.txt          # Inference/demo dependencies
+├── DESIGN.md                      # UI style reference
+├── Reporte.ipynb                  # Original research report
+├── .gitignore
 └── README.md
 ```
 
-If large model checkpoints are stored in GitHub Releases instead of the repository, update the file tree and link to the release.
+*Personalized identity-recognition `.h5` checkpoints are intentionally omitted from the public-oriented tree. If they have previously been committed, removing them from the latest commit does not remove them from Git history.*
 
-## Running the research code
+## Research-code reproduction notes
 
-The scripts were developed for a GPU-equipped computing environment and retain **absolute paths to the original training directories**. They are provided as the original training implementation, **not as a ready-to-run application**.
+The original training scripts were created in a GPU-equipped computing environment and contain absolute paths from that environment. They are preserved as research code, **not** one-command reproducible pipelines.
 
-To adapt the scripts to another environment:
-
-1. Set up a compatible Python environment with TensorFlow/Keras, NumPy, pandas, and scikit-learn. Match versions to the saved `.h5` model format where needed.
-2. Obtain CelebA from its official source and comply with its license and usage terms.
-3. Update `IMG_FOLDER` and `ATTR_FILE` in `Modelo CNN celebA/entrenar_celebA_grande.py`.
-4. For personalized experiments, create separate `train/` and `validation/` directories containing `otros/` and `yo/` class subdirectories, using images that you are authorized to process.
-5. Update `MODELO_PRETRAINED`, `TRAIN_DIR`, and `VAL_DIR` in the corresponding transfer-learning script.
-6. Run the CelebA training script before either transfer-learning script if a suitable pretrained checkpoint is not available.
-
-Avoid evaluating on images that were used for fitting or threshold selection. For a new experiment, reserve a completely untouched **test set**.
+To reproduce the experiments, obtain [CelebA from its source](https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) under its applicable terms, update dataset and checkpoint paths in the training scripts, and create authorized, separated training/validation/test data for the personalized experiments. Keep a held-out test set that is not used for model training or threshold selection.
 
 ## Privacy and responsible use
 
-Facial images and trained identity-recognition checkpoints can carry **biometric privacy risks**. This repository is intended as an educational/research demonstration. Do not publish private training photographs or identifying datasets without appropriate consent. Consider keeping personalized model checkpoints private and making only the attribute-learning model, code, aggregate metrics, and non-identifying diagrams public.
+Only process images you are authorized to use. This local demo does not intentionally persist uploaded portraits to disk or call an external inference API; if hosted remotely, photos are sent to **that host** for processing. Do not publish personal training photos or personalized identity-recognition model checkpoints without considering biometric privacy and consent.
 
-## Key takeaways
+This project is intended for education, research, and portfolio demonstration — **not** for access control or high-stakes decisions.
 
-- Building a CNN from scratch for multi-label facial attribute prediction.
-- Reusing visual representations for a new task with limited data.
-- Comparing frozen-feature extraction with partial fine-tuning.
-- Handling class imbalance using weighted training and image augmentation.
-- Understanding the **precision–recall trade-off** and the limitations of threshold tuning on validation data.
+## What I learned
+
+- Designing and training a multi-label CNN from scratch.
+- Transferring learned representations to a different classification task.
+- Comparing frozen feature extraction and fine-tuning.
+- Addressing class imbalance and reasoning about precision versus recall.
+- Evaluating decision thresholds and identifying limitations in validation-only reporting.
+- Turning an experimental `.h5` model into a local Python/Streamlit demonstration.
 
 ## Author
 
-**Jorge Arturo Uc Torres**  
-GitHub: [@Slowpokeislife](https://github.com/Slowpokeislife)
+**Jorge Arturo Uc Torres** · [@Slowpokeislife](https://github.com/Slowpokeislife)

@@ -1,0 +1,6 @@
+# Python 3.13, Windows x64 (CPU inference)
+# Uses the existing CelebA .h5 checkpoint.
+tensorflow==2.21.0
+streamlit>=1.45,<2
+Pillow>=11,<13
+numpy>=1.26,<3
